@@ -7,25 +7,49 @@ const SPREADSHEET_ID = PropertiesService.getScriptProperties().getProperty('SPRE
 
 // LINE Messaging APIからリクエストを処理する
 function doPost(e) {
+    // エラーハンドリング用にreplyTokenを初期化
+    let replyToken = null;
   try {
     const requestBody = JSON.parse(e.postData.contents);
     // イベントオブジェクトを取得、最初のイベントだけ処理する
     const event = requestBody.events[0];
 
   // ... (イベントのreplyTokenを取得)
-    const replyToken = event.replyToken;
+    replyToken = event.replyToken;
 
   // --- 画像かテキストかで処理を振り分ける ---
   if (event.type === 'message' && event.message.type === 'image') {
     // 画像処理のロジックへ
+    const messageId = event.message.id;
+    // LINE Content APIから画像を取得
+    const imageBlob = getLineContent(messageId);
+    // Gemini APIで画像を処理し、JSON形式の応答を取得
+    const jsonData = processImageWithGemini(imageBlob);
+    // スプレッドシートにデータを保存
+    saveDataToSpreadsheet(jsonData);
+    // ユーザーに応答を送信
+    replyToLine(replyToken, 'レシートの情報を記録しました:\n' +
+      `日付: ${jsonData.Date}\n` +
+      `合計金額: ${jsonData.TotalAmount}\n` +
+      `店舗名: ${jsonData.ShopName}\n` +
+      `カテゴリ: ${jsonData.Category}\n` +
+      `メモ: ${jsonData.Memo}`);
   } else if (event.type === 'message' && event.message.type === 'text') {
     // テキスト処理のロジックへ
+    replyToLine(replyToken, 'テキストはこれから対応します！');
   } else {
     // それ以外の場合の応答
+    replyToLine(replyToken, '画像またはテキストメッセージだけです！');
   }
+  return ContentService
+  .createTextOutput(JSON.stringify({status: 'ok'}))
+  .setMimeType(ContentService.MimeType.JSON);
   }
   catch (error) {
     Logger.log('Error: ' + error.message);
+    if (replyToken){
+        replyToLine(replyToken, 'エラーが発生しました: ' + error.message);
+    }
     return ContentService.createTextOutput(JSON.stringify({ 'status': 'error', 'message': error.message })).setMimeType(ContentService.MimeType.JSON);
   }
 }
@@ -53,8 +77,7 @@ function getLineContent(messageId) {
 
 // Gemini APIを呼び出してJSON形式の応答を取得する関数
 function processImageWithGemini(imageBlob) {
-  try {
-    // Base64エンコード
+     // Base64エンコード
     const base64Image = Utilities.base64Encode(imageBlob.getBytes());
     
     // 画像を解析するためのプロンプト
@@ -87,8 +110,8 @@ function processImageWithGemini(imageBlob) {
         }
       ],
       // configで応答形式をJSONに指定する
-      'config':{
-        "responsMimeType":"application/json",
+      'generationConfig':{
+        "responseMimeType":"application/json",
         "responseSchema":{
             "type":"OBJECT",
             "properties":{
@@ -133,19 +156,69 @@ function processImageWithGemini(imageBlob) {
     if (responseCode === 200) {
       const jsonResponse = JSON.parse(response.getContentText());
       // 応答からテキストを抽出、空白を消してJSONとして返す
-      return jsonResponse.candidates[0].content.parts[0].text.trim();
+      // JSON形式でなかったらエラーを投げる
+      try {
+        const jsondata = JSON.parse(jsonResponse.candidates[0].content.parts[0].text.trim());
+        return jsondata;
+        
+      }
+        catch (error) {
+        Logger.log('Gemini APIの応答がJSON形式ではありません: ' + jsonResponse.candidates[0].content.parts[0].text);
+        throw new Error('Gemini APIの応答がJSON形式ではありません。');
+      }
     } else {
       Logger.log('Gemini API呼び出しエラー (' + responseCode + '): ' + response.getContentText());
-      return 'Gemini APIでの画像解析中にエラーが発生しました。';
+      throw new Error('Gemini APIでの画像解析中にエラーが発生しました。') ;
     }
-    
-  } catch(error) {
-    Logger.log('Gemini処理エラー: ' + error.toString());
-    return '画像処理中に予期せぬエラーが発生しました。';
-  }
 }
 
 // Google Spreadsheetにデータを保存する関数
+function saveDataToSpreadsheet(data) {
+    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getActiveSheet();
 
+    // 各データを取得、データ型を変更
+    const date = data.Date ? new Date(data.Date) : null;
+    const totalAmount = data.TotalAmount ? Number(data.TotalAmount) : 0;
+    const shopName = data.ShopName || '';
+    const category = data.Category || '';
+    const memo = data.Memo || '';
+    
+    // スプレッドシートにデータを追加
+    try {
+      sheet.appendRow([date, totalAmount, shopName, category, memo]);
+    } catch (error) {
+      Logger.log('スプレッドシートへのデータ保存エラー: ' + error.message);
+      throw new Error('スプレッドシートへのデータ保存に失敗しました。');
+    }
+    
+}
 
 // LINE Messaging APIに応答を送信する関数
+function replyToLine(replyToken, messageText) {
+  const payload = {
+    'replyToken': replyToken,
+    'messages': [
+      {
+        'type': 'text',
+        'text': messageText
+      }
+    ]
+  };
+  
+  const options = {
+    'method': 'post',
+    'headers': {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + LINE_CHANNEL_ACCESS_TOKEN
+    },
+    'payload': JSON.stringify(payload),
+    'muteHttpExceptions': true
+  };
+  
+  const response = UrlFetchApp.fetch(LINE_URL, options);
+  
+  if (response.getResponseCode() !== 200) {
+    Logger.log('LINE Messaging APIへの応答に失敗: ' + response.getContentText());
+    throw new Error('LINEへの応答送信に失敗しました。');
+  }
+}   
