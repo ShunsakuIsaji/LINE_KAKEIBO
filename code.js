@@ -56,7 +56,7 @@ function doPost(e) {
 
 // 画像メッセージを処理する関数
 function getLineContent(messageId) {
-  const url = `https://api.line.me/v2/bot/message/${messageId}/content`;
+  const url = `https://api-data.line.me/v2/bot/message/${messageId}/content`;
   const options = {
     'method': 'get',
     'headers': {
