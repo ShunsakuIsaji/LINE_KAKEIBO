@@ -36,7 +36,49 @@ function doPost(e) {
       `メモ: ${jsonData.Memo}`);
   } else if (event.type === 'message' && event.message.type === 'text') {
     // テキスト処理のロジックへ
-    replyToLine(replyToken, 'テキストはこれから対応します！');
+    // 「今月」とメッセージが含まれている場合、今月の月別集計を返す
+    const userMessage = event.message.text;
+    if (userMessage.includes('今月')) {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = now.getMonth() + 1; // 月は0から始まるため+1
+      const summary = getMonthlySummary(year, month);
+      const responseMessage = `【${year}年${month}月の集計】\n` +
+        `総合計: ${summary.total}円\n` +
+        `食費: ${summary.foodExpenses}円\n` +
+        `外食: ${summary.diningOut}円\n` +
+        `日用品: ${summary.dailyNecessities}円\n` +
+        `その他: ${summary.others}円`;
+      replyToLine(replyToken, responseMessage);
+      return ContentService
+      .createTextOutput(JSON.stringify({status: 'ok'}))
+      .setMimeType(ContentService.MimeType.JSON);
+    } else if (userMessage.includes('先月')) {
+        // 「先月」とメッセージが含まれている場合、先月の月別集計を返す
+        const now = new Date();
+        let year = now.getFullYear();
+        let month = now.getMonth(); // 先月
+        
+        if (month === 0) { // 1月の場合、先月は前年の12月
+            month = 12;
+            year -= 1;
+        }
+        
+        const summary = getMonthlySummary(year, month);
+        const responseMessage = `【${year}年${month}月の集計】\n` +
+          `総合計: ${summary.total}円\n` +
+          `食費: ${summary.foodExpenses}円\n` +
+          `外食: ${summary.diningOut}円\n` +
+          `日用品: ${summary.dailyNecessities}円\n` +
+          `その他: ${summary.others}円`;
+        replyToLine(replyToken, responseMessage);
+        return ContentService
+        .createTextOutput(JSON.stringify({status: 'ok'}))
+        .setMimeType(ContentService.MimeType.JSON);
+    } else {
+        // それ以外のテキストメッセージへは提携文を返す
+        replyToLine(replyToken, '「今月」または「先月」とメッセージに含めて送信すると、支出集計をお知らせします！');
+    }
   } else {
     // それ以外の場合の応答
     replyToLine(replyToken, '画像またはテキストメッセージだけです！');
@@ -222,3 +264,58 @@ function replyToLine(replyToken, messageText) {
     throw new Error('LINEへの応答送信に失敗しました。');
   }
 }   
+
+// Google Spreadsheetからカテゴリ別に月別集計する関数
+function getMonthlySummary(year, month) {
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getActiveSheet();
+  //1行目はヘッダーなので2行目以降を取得
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    return {
+      total: 0,
+      foodExpenses: 0,
+      diningOut: 0,
+      dailyNecessities: 0,
+      others: 0
+    };
+  }
+  const data = sheet.getRange(2, 1, lastRow - 1, 5).getValues();
+  
+  let total = 0;
+    let foodExpenses = 0;
+    let diningOut = 0;
+    let dailyNecessities = 0;
+    let others = 0;
+  
+  data.forEach(row => {
+    const date = row[0];
+    const amount = row[1];
+    const category = row[3];
+    
+    if (date instanceof Date && date.getFullYear() === year && (date.getMonth() + 1) === month) {
+      total += amount;
+      switch (category) {
+        case '食費':
+          foodExpenses += amount;
+          break;
+        case '外食':
+          diningOut += amount;
+          break;
+        case '日用品':
+          dailyNecessities += amount;
+          break;
+        case 'その他':
+          others += amount;
+          break;
+      }
+    }
+    });
+  
+  return {
+    total: total,
+    foodExpenses: foodExpenses,
+    diningOut: diningOut,
+    dailyNecessities: dailyNecessities,
+    others: others
+  };
+}
