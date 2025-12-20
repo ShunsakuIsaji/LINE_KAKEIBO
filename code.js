@@ -75,7 +75,40 @@ function doPost(e) {
         return ContentService
         .createTextOutput(JSON.stringify({status: 'ok'}))
         .setMimeType(ContentService.MimeType.JSON);
-    } else {
+    } else if (userMessage.includes('直近')) {
+        // 「直近」とメッセージが含まれている場合、直近3件のデータを返す
+        const recentEntries = getRecentEntries(3);
+        if (recentEntries.length === 0) {
+            replyToLine(replyToken, '記録されたデータがありません。');
+        }   else {
+            let responseMessage = '【直近3件の記録】\n';
+            recentEntries.forEach((entry, index) => {
+                const date = entry[0] ? Utilities.formatDate(new Date(entry[0]), Session.getScriptTimeZone(), 'yyyy-MM-dd') : '不明';
+                const amount = entry[1] || 0;
+                const shopName = entry[2] || '不明';
+                const category = entry[3] || '不明';
+                const memo = entry[4] || 'なし';
+                responseMessage += `${index + 1}. 日付: ${date}, 金額: ${amount}円, 店舗: ${shopName}, カテゴリ: ${category}, メモ: ${memo}\n`;
+            });
+            replyToLine(replyToken, responseMessage);
+        }
+        return ContentService
+        .createTextOutput(JSON.stringify({status: 'ok'}))
+        .setMimeType(ContentService.MimeType.JSON);
+    } else if (userMessage.includes('説明')) {
+        // 「説明」とメッセージが含まれている場合、サービスの説明を返す
+        const explanation = `この家計簿Botは、レシートの画像を送信すると自動で情報を抽出し、Googleスプレッドシートに記録します。
+        下記のコマンドで支出集計も可能です:
+        「今月」:今月の支出集計を返信します
+        「先月」:先月の支出集計を返信します
+        「直近」:直近3件の記録を返信します
+        ぜひご活用ください！`;
+        replyToLine(replyToken, explanation);
+    }   else if (userMessage.includes('URL')){
+        // 「URL」とメッセージが含まれている場合、スプレッドシートのURLを返す
+        const sheetUrl = `スプレッドシートのURLはこちらです:\nhttps://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}`;
+        replyToLine(replyToken, sheetUrl);
+    }else {
         // それ以外のテキストメッセージへは提携文を返す
         replyToLine(replyToken, '「今月」または「先月」とメッセージに含めて送信すると、支出集計をお知らせします！');
     }
@@ -319,3 +352,17 @@ function getMonthlySummary(year, month) {
     others: others
   };
 }
+
+//直近追加のデータx件を取得する関数
+function getRecentEntries(count) {
+    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getActiveSheet();
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) {
+        return [];
+    }
+    const startRow = Math.max(2, lastRow - count + 1);
+    const numRows = lastRow - startRow + 1;
+    const data = sheet.getRange(startRow, 1, numRows, 5).getValues();
+    return data;
+}
+
