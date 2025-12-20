@@ -98,14 +98,16 @@ function doPost(e) {
     } else if (userMessage.includes('説明')) {
         // 「説明」とメッセージが含まれている場合、サービスの説明を返す
         const explanation = `この家計簿Botは、レシートの画像を送信すると自動で情報を抽出し、Googleスプレッドシートに記録します。
-        下記のコマンドで支出集計も可能です:
-        「今月」:今月の支出集計を返信します
-        「先月」:先月の支出集計を返信します
-        「直近」:直近3件の記録を返信します
-        ぜひご活用ください！`;
+    下記のコマンドで支出集計も可能です:
+    「今月」:今月の支出集計を返信します
+    「先月」:先月の支出集計を返信します
+    「直近」:直近3件の記録を返信します
+    「URL」:スプレッドシートのURLを返信します
+    ぜひご活用ください！`;
         replyToLine(replyToken, explanation);
     }   else if (userMessage.includes('URL')){
         // 「URL」とメッセージが含まれている場合、スプレッドシートのURLを返す
+        //  スプレッドシートの共有設定を要確認
         const sheetUrl = `スプレッドシートのURLはこちらです:\nhttps://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}`;
         replyToLine(replyToken, sheetUrl);
     }else {
